@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "iisSettings": {
+    "windowsAuthentication": false,
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:37467",
+      "sslPort": 44308
+    }
+  },
+  "profiles": {
+    "Colorverse.MetaApis": {
+      "commandName": "Project",
+      "workingDirectory": "$(OutDir)",
+      "launchBrowser": true,
+      "launchUrl": "index.html",
+      "applicationUrl": "http://127.0.0.1:5001;http://*:5001",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "launchUrl": "index.html",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+#!/bin/bash
+
+set +x
+set +e
+
+firstOnlyUpper(){
+    local string="$1"
+    local first_letter="$(tr '[:lower:]' '[:upper:]' <<< ${string:0:1})"
+    local remainder="${string:1}"
+    local result="${first_letter}${remainder}"
+    echo $result
+}
+
+swagger_make(){
+    local projectSlug=(`echo $1 | tr '[:upper:]' '[:lower:]'`)
+    local projectGroup="$(firstOnlyUpper $1)"
+    local projectTarget=$projectGroup
+    if [[ "$projectTarget" == *-* ]]; then
+        split=(`echo $projectTarget | tr "-" "\n"`)
+        projectGroup=${split[0]}
+        projectGroup="$(firstOnlyUpper $projectGroup)"
+        projectTarget=${split[0]}$(firstOnlyUpper ${split[1]})
+        projectTarget="$(firstOnlyUpper $projectTarget)"
+    fi
+
+    local projectPath=./dotnet/Service/${projectGroup}/${projectTarget}Apis/${projectTarget}Apis.csproj
+    local projectDllPath=./dotnet/Service/${projectGroup}/${projectTarget}Apis/bin/Debug/net6.0/Colorverse.${projectTarget}Apis.dll
+    local swaggerPath=openapi/$projectSlug.json
+
+    echo [$projectSlug] dotnet build $projectPath
+    dotnet build $projectPath
+
+    echo [$projectSlug] openapi build ...
+    ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --output $swaggerPath $projectDllPath latest
+
+    echo [$projectSlug] openapi file check ...
+    ls -A $swaggerPath
+}
+
+mkdir -p ./openapi
+dotnet tool restore
+
+if [ "$1" == "" ]; then
+    echo "Usage: $0 {service}"
+    exit -1
+elif [ "$1" == "all" ]; then
+    swagger_make "meta"
+    swagger_make "meta-admin"
+    swagger_make "space"
+    swagger_make "billing"
+    swagger_make "meelib"
+    exit 0
+fi
+
+swagger_make $1

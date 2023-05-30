@@ -1,0 +1,55 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<RootNamespace>Cys.MetaAdmin</RootNamespace>
+		<AssemblyName>Cys.MetaAdminApis</AssemblyName>
+	</PropertyGroup>
+	
+	
+  <PropertyGroup Condition=" '$(RunConfiguration)' == 'Colorverse.MetaAdmin.Apis' " />
+  <ItemGroup>
+		<ProjectReference Include="..\..\..\Framework\CvFramework.Common\CvFramework.Common.csproj" />
+		<ProjectReference Include="..\..\..\Framework\CvFramework.Excel\CvFramework.Excel.csproj" />
+		<ProjectReference Include="..\..\..\Framework\CvFramework.GoogleDrive\CvFramework.GoogleDrive.csproj" />
+		<ProjectReference Include="..\..\..\Framework\CvFramework.Worksheet\CvFramework.Worksheet.csproj" />
+		<ProjectReference Include="..\..\..\Base\Colorverse.Database\Colorverse.Database.csproj" />		
+		<ProjectReference Include="..\..\..\Base\Colorverse.Apis.Auth\Colorverse.Apis.Auth.csproj" />
+		<ProjectReference Include="..\..\..\Base\Colorverse.Aws.S3\Colorverse.Aws.S3.csproj" />
+		<ProjectReference Include="..\..\..\Base\Colorverse.Common\Colorverse.Common.csproj" />
+		<ProjectReference Include="..\..\..\Base\Colorverse.Apis.Swagger\Colorverse.Apis.Swagger.csproj">
+			<GlobalPropertiesToRemove></GlobalPropertiesToRemove>
+		</ProjectReference>
+		<ProjectReference Include="..\..\..\Base\Colorverse.Apis\Colorverse.Apis.csproj">
+			<GlobalPropertiesToRemove></GlobalPropertiesToRemove>
+		</ProjectReference>
+		<ProjectReference Include="..\..\..\Base\Colorverse.Nats\Colorverse.Nats.csproj">
+		  <GlobalPropertiesToRemove></GlobalPropertiesToRemove>
+		</ProjectReference>
+		<ProjectReference Include="..\..\..\Base\Colorverse.Apis.Logger\Colorverse.Apis.Logger.csproj">
+		  <GlobalPropertiesToRemove></GlobalPropertiesToRemove>
+		</ProjectReference>
+		<ProjectReference Include="..\..\..\Lib\ResourceLibrary\ResourceLibrary.csproj" />
+		<ProjectReference Include="..\..\..\Lib\UserLibrary\UserLibrary.csproj" />
+	</ItemGroup>
+
+  	<ItemGroup>
+		<None Include="..\..\..\..\config\config.toml" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
+  	<ItemGroup>
+  	  <PackageReference Include="Google.Apis.Sheets.v4" Version="1.58.0.2826" />
+  	</ItemGroup>
+
+	<Target Name="CopyCustomContent" AfterTargets="AfterBuild">
+		<ItemGroup>
+			<KeysFiles Include="$(ProjectDir)..\..\..\..\config\keys\dev\*.pem" />
+			<GoogleKeysFile Include="$(ProjectDir)..\..\..\..\config\google-servicekey.json" />
+		</ItemGroup>
+		<Copy SourceFiles="@(KeysFiles)" DestinationFolder="$(outdir)config\keys\"></Copy>
+		<Copy SourceFiles="@(GoogleKeysFile)" DestinationFolder="$(outdir)config\"></Copy>
+	</Target>
+
+</Project>

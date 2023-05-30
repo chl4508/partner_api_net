@@ -1,0 +1,16 @@
+<Project>
+
+	<!--ref:https://learn.microsoft.com/en-us/visualstudio/msbuild/common-msbuild-project-properties?view=vs-2022 -->
+	<PropertyGroup>
+		<NoWarn>$(NoWarn);1591</NoWarn>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Authors>Cys Developer</Authors>
+		<Company>Cys.co</Company>
+		<Version>0.4.0</Version>
+		<AssemblyVersion>$(Version)</AssemblyVersion>
+		<FileVersion>$([System.DateTime]::Now.ToString(yyyy)).$([System.DateTime]::Now.ToString(MMdd)).$([System.DateTime]::Now.ToString(HHmm))</FileVersion>
+	</PropertyGroup>
+
+</Project>

@@ -1,0 +1,353 @@
+########################################
+#
+########################################
+stages:
+  - test
+  - build
+  - deploy-server
+  - deploy-docs
+
+########################################
+# Global
+########################################
+variables:  
+  ENVIRONMENT_ZONE: $CI_COMMIT_REF_SLUG
+  CACHE_KEY_PREFIX: ${CI_PROJECT_NAMESPACE}-${CI_PROJECT_NAME}-${CI_COMMIT_REF_SLUG}
+  DOTNET_VERSION: "6.0"
+  DOTNET_SRC_PATH: ./dotnet
+  DOTNET_SLN_PATH: ./Colorverse.All.sln
+  DOCKER_DEFAULT_TARGETS: cv-meta cv-space cv-billing cv-meelib cv-meta-admin cv-space-admin cv-admin-web
+
+########################################
+# Test dotnet aspnet
+########################################
+test-dotnet:
+  stage: test
+  image: mcr.microsoft.com/dotnet/sdk:$DOTNET_VERSION
+  tags: ["xrunner-public"]
+  cache:    
+    key: "${CACHE_KEY_PREFIX}-test-dotnet"
+    paths:
+      - .nuget
+    policy: pull-push  
+  artifacts:
+    paths:
+      - $DOTNET_SRC_PATH/**/TestResult/*
+    reports:
+      junit:
+        - $DOTNET_SRC_PATH/**/TestResult/*.junit.xml
+    expire_in: 1 week
+  script:
+    - dotnet restore --packages ./.nuget $DOTNET_SLN_PATH
+    - dotnet tool restore
+    # junit report
+    - dotnet test --no-restore --logger:"junit;LogFilePath=./TestResult/{assembly}.junit.xml;MethodFormat=Class;FailureBodyFormat=Verbose" $DOTNET_SLN_PATH
+    - find . -name "TestResult"
+    # openapi build meta
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --output meta.json $DOTNET_SRC_PATH/Service/Meta/MetaApis/bin/Debug/net$DOTNET_VERSION/Colorverse.MetaApis.dll latest
+    - ls -A meta.json
+    # openapi build meta-admin
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --output meta-admin.json $DOTNET_SRC_PATH/Service/Meta/MetaAdminApis/bin/Debug/net$DOTNET_VERSION/Colorverse.MetaAdminApis.dll latest
+    - ls -A meta-admin.json
+    # openapi build space
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --output space.json $DOTNET_SRC_PATH/Service/Space/SpaceApis/bin/Debug/net$DOTNET_VERSION/Colorverse.SpaceApis.dll latest
+    - ls -A space.json
+    # openapi build space-admin
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --output space-admin.json $DOTNET_SRC_PATH/Service/Space/SpaceAdminApis/bin/Debug/net$DOTNET_VERSION/Colorverse.SpaceAdminApis.dll latest
+    - ls -A space-admin.json
+    # openapi build billing
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --output billing.json $DOTNET_SRC_PATH/Service/Billing/BillingApis/bin/Debug/net$DOTNET_VERSION/Colorverse.BillingApis.dll latest
+    - ls -A billing.json
+    # openapi build meelib
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --output meelib.json $DOTNET_SRC_PATH/Service/Meelib/MeelibApis/bin/Debug/net$DOTNET_VERSION/Colorverse.MeelibApis.dll latest
+    - ls -A meelib.json
+    
+
+########################################
+# Build dotnet
+########################################
+build-dotnet:
+  stage: build
+  image: mcr.microsoft.com/dotnet/sdk:$DOTNET_VERSION
+  tags: ["xrunner-public"]
+  cache:    
+    key: "${CACHE_KEY_PREFIX}-build"
+    paths:
+      - .nuget
+    policy: pull-push
+  artifacts:
+    expire_in: 1 hour
+    paths: 
+      - ./build
+      - ./openapi
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\#no-deploy/
+    - if: $CI_PIPELINE_SOURCE != "push"
+      when: never
+    - if: $CI_COMMIT_REF_SLUG == "develop"
+      variables:
+        ENVIRONMENT_ZONE: dev
+        BUILD_CONFIG: debug
+    - if: $CI_COMMIT_REF_SLUG == "ir"
+      variables:
+        BUILD_CONFIG: debug
+    - if: $CI_COMMIT_REF_SLUG == "pr"
+      variables:
+        BUILD_CONFIG: debug
+    - if: $CI_COMMIT_REF_SLUG == "rc"
+      variables:
+        BUILD_CONFIG: release
+    - when: never
+  environment: ${ENVIRONMENT_ZONE}-build-dotnet
+  before_script:
+    - set -e && set -x
+    - dotnet tool restore
+  script:
+    # config read
+    - CONFIG_BASEURL=`(cat ./config/config.$ENVIRONMENT_ZONE.toml | grep baseurl | grep -Eo "(http|https)://[a-zA-Z0-9./?=_%:-]*")`
+    - CONFIG_ADMINURL=`(cat ./config/config.$ENVIRONMENT_ZONE.toml | grep adminurl | grep -Eo "(http|https)://[a-zA-Z0-9./?=_%:-]*")`
+    - echo $CONFIG_BASEURL
+    - echo $CONFIG_ADMINURL
+    # dir
+    - mkdir -p openapi
+    # build meta
+    - dotnet restore --packages ./.nuget $DOTNET_SRC_PATH/Service/Meta/MetaApis/MetaApis.csproj
+    - dotnet build --no-restore -c $BUILD_CONFIG -o ./build/cv-meta/$BUILD_CONFIG $DOTNET_SRC_PATH/Service/Meta/MetaApis/MetaApis.csproj
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --host $CONFIG_BASEURL --output openapi/meta.json ./build/cv-meta/$BUILD_CONFIG/Colorverse.MetaApis.dll latest
+    - ls -A ./openapi/meta.json
+    # build meta-admin
+    - dotnet restore --packages ./.nuget $DOTNET_SRC_PATH/Service/Meta/MetaAdminApis/MetaAdminApis.csproj
+    - dotnet build --no-restore -c $BUILD_CONFIG -o ./build/cv-meta-admin/$BUILD_CONFIG $DOTNET_SRC_PATH/Service/Meta/MetaAdminApis/MetaAdminApis.csproj
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --host $CONFIG_ADMINURL --output openapi/meta-admin.json ./build/cv-meta-admin/$BUILD_CONFIG/Colorverse.MetaAdminApis.dll latest
+    - ls -A ./openapi/meta-admin.json
+    # build space
+    - dotnet restore --packages ./.nuget $DOTNET_SRC_PATH/Service/Space/SpaceApis/SpaceApis.csproj
+    - dotnet build --no-restore -c $BUILD_CONFIG -o ./build/cv-space/$BUILD_CONFIG $DOTNET_SRC_PATH/Service/Space/SpaceApis/SpaceApis.csproj
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --host $CONFIG_BASEURL --output openapi/space.json ./build/cv-space/$BUILD_CONFIG/Colorverse.SpaceApis.dll latest
+    - ls -A ./openapi/space.json
+    # build space-admin
+    - dotnet restore --packages ./.nuget $DOTNET_SRC_PATH/Service/Space/SpaceAdminApis/SpaceAdminApis.csproj
+    - dotnet build --no-restore -c $BUILD_CONFIG -o ./build/cv-space-admin/$BUILD_CONFIG $DOTNET_SRC_PATH/Service/Space/SpaceAdminApis/SpaceAdminApis.csproj
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --host $CONFIG_ADMINURL --output openapi/space-admin.json ./build/cv-space-admin/$BUILD_CONFIG/Colorverse.SpaceAdminApis.dll latest
+    - ls -A ./openapi/space-admin.json
+    # build billing
+    - dotnet restore --packages ./.nuget $DOTNET_SRC_PATH/Service/Billing/BillingApis/BillingApis.csproj
+    - dotnet build --no-restore -c $BUILD_CONFIG -o ./build/cv-billing/$BUILD_CONFIG $DOTNET_SRC_PATH/Service/Billing/BillingApis/BillingApis.csproj
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --host $CONFIG_BASEURL --output openapi/billing.json ./build/cv-billing/$BUILD_CONFIG/Colorverse.BillingApis.dll latest
+    - ls -A ./openapi/billing.json
+    # build meelib
+    - dotnet restore --packages ./.nuget $DOTNET_SRC_PATH/Service/Meelib/MeelibApis/MeelibApis.csproj
+    - dotnet build --no-restore -c $BUILD_CONFIG -o ./build/cv-meelib/$BUILD_CONFIG $DOTNET_SRC_PATH/Service/Meelib/MeelibApis/MeelibApis.csproj
+    - ASPNETCORE_ENVIRONMENT=swagger dotnet tool run swagger tofile --host $CONFIG_BASEURL --output openapi/meelib.json ./build/cv-meelib/$BUILD_CONFIG/Colorverse.MeelibApis.dll latest
+    - ls -A ./openapi/meelib.json
+    # build admin-web
+    - dotnet restore --packages ./.nuget $DOTNET_SRC_PATH/Service/Admin/AdminWeb/AdminWeb.csproj
+    - dotnet build --no-restore -c $BUILD_CONFIG -o ./build/cv-admin-web/$BUILD_CONFIG $DOTNET_SRC_PATH/Service/Admin/AdminWeb/AdminWeb.csproj
+    
+  after_script:
+    # remove files
+    - find ./build -name "config" -exec rm -rf {} \; || true
+    - find ./build -name "appsettings.*.json" -exec rm -rf {} \;  || true
+    - find ./build -name "config*.toml" -exec rm -rf {} \;  || true
+
+########################################
+# Build docker aspnet
+########################################
+build-dotnet-docker:
+  image: docker:latest
+  stage: build
+  needs: ["build-dotnet"]
+  tags: ["xrunner-public"]
+  variables:
+    GIT_DEPTH: 1
+    CACHE_APK_DIR: $CI_PROJECT_DIR/.cache/apk
+    CACHE_PIP_DIR: $CI_PROJECT_DIR/.cache/pip
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\#no-deploy/
+    - if: $CI_PIPELINE_SOURCE != "push"
+      when: never
+    - if: $CI_COMMIT_REF_SLUG == "develop"
+      variables:
+        BUILD_CONFIG: debug
+        ENVIRONMENT_ZONE: dev
+    - if: $CI_COMMIT_REF_SLUG == "ir"
+      variables:
+        BUILD_CONFIG: debug
+    - if: $CI_COMMIT_REF_SLUG == "pr"
+      variables:
+        BUILD_CONFIG: debug
+    - if: $CI_COMMIT_REF_SLUG == "rc"
+      variables:
+        BUILD_CONFIG: release
+    - when: never
+  cache:    
+    key: "${CACHE_KEY_PREFIX}-${CI_JOB_NAME}"
+    paths:
+      - $CACHE_APK_DIR
+      - $CACHE_PIP_DIR
+    policy: pull-push
+  environment: ${ENVIRONMENT_ZONE}-docker-image-build-then-push
+  before_script:
+    - set -e && set -x
+    - mkdir -p $CACHE_APK_DIR $CACHE_PIP_DIR 
+    - apk add --cache-dir $CACHE_APK_DIR curl jq python3 py3-pip
+    - pip install --cache-dir $CACHE_PIP_DIR awscli
+    - aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin $AWS_ECR_HOST
+  script:
+    # cv-meta-apis
+    - docker image rm $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meta:latest || true
+    - docker build --build-arg ENVIRONMENT_ZONE=$ENVIRONMENT_ZONE --build-arg BUILD_CONFIG=$BUILD_CONFIG --build-arg PROJECT_PATH=$DOTNET_SRC_PATH/Service/Meta/MetaApis --build-arg BUILD_PATH=./build/cv-meta -f ./docker/aspnet.Dockerfile --tag $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meta:latest .
+    - docker push $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meta:latest
+    # cv-meta-admin-apis
+    - docker image rm $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meta-admin:latest || true
+    - docker build --build-arg ENVIRONMENT_ZONE=$ENVIRONMENT_ZONE --build-arg BUILD_CONFIG=$BUILD_CONFIG --build-arg PROJECT_PATH=$DOTNET_SRC_PATH/Service/Meta/MetaAdminApis --build-arg BUILD_PATH=./build/cv-meta-admin -f ./docker/aspnet.Dockerfile --tag $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meta-admin:latest .
+    - docker push $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meta-admin:latest
+    # cv-space-apis
+    - docker image rm $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/space:latest || true
+    - docker build --build-arg ENVIRONMENT_ZONE=$ENVIRONMENT_ZONE --build-arg BUILD_CONFIG=$BUILD_CONFIG --build-arg PROJECT_PATH=$DOTNET_SRC_PATH/Service/Space/SpaceApis --build-arg BUILD_PATH=./build/cv-space -f ./docker/aspnet.Dockerfile --tag $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/space:latest .
+    - docker push $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/space:latest
+    # cv-space-admin-apis
+    - docker image rm $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/space-admin:latest || true
+    - docker build --build-arg ENVIRONMENT_ZONE=$ENVIRONMENT_ZONE --build-arg BUILD_CONFIG=$BUILD_CONFIG --build-arg PROJECT_PATH=$DOTNET_SRC_PATH/Service/Space/SpaceAdminApis --build-arg BUILD_PATH=./build/cv-space-admin -f ./docker/aspnet.Dockerfile --tag $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/space-admin:latest .
+    - docker push $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/space-admin:latest
+    # cv-billing-apis
+    - docker image rm $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/billing:latest || true
+    - docker build --build-arg ENVIRONMENT_ZONE=$ENVIRONMENT_ZONE --build-arg BUILD_CONFIG=$BUILD_CONFIG --build-arg PROJECT_PATH=$DOTNET_SRC_PATH/Service/Billing/BillingApis --build-arg BUILD_PATH=./build/cv-billing -f ./docker/aspnet.Dockerfile --tag $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/billing:latest .
+    - docker push $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/billing:latest
+    # cv-meelib-apis
+    - docker image rm $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meelib:latest || true
+    - docker build --build-arg ENVIRONMENT_ZONE=$ENVIRONMENT_ZONE --build-arg BUILD_CONFIG=$BUILD_CONFIG --build-arg PROJECT_PATH=$DOTNET_SRC_PATH/Service/Meelib/MeelibApis --build-arg BUILD_PATH=./build/cv-meelib -f ./docker/aspnet.Dockerfile --tag $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meelib:latest .
+    - docker push $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/meelib:latest
+    # cv-admin-web
+    - docker image rm $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/admin-web:latest || true
+    - docker build --build-arg ENVIRONMENT_ZONE=$ENVIRONMENT_ZONE --build-arg BUILD_CONFIG=$BUILD_CONFIG --build-arg PROJECT_PATH=$DOTNET_SRC_PATH/Service/Admin/AdminWeb --build-arg BUILD_PATH=./build/cv-admin-web -f ./docker/aspnet.Dockerfile --tag $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/admin-web:latest .
+    - docker push $AWS_ECR_HOST/colorverse/$ENVIRONMENT_ZONE/admin-web:latest
+########################################
+# Deploy Server
+########################################
+.deploy-server-init: &deploy-server-init
+  stage: deploy-server
+  needs: ["build-dotnet-docker"]
+  environment: ${ENVIRONMENT_ZONE}-deploy-server
+  before_script:
+    - set -e && set -x
+    - aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin $AWS_ECR_HOST
+    - mkdir -p $APP_DIR
+    - cp ./docker/$ENVIRONMENT_ZONE/docker-compose.yml $APP_DIR/
+    - cp ./docker/$ENVIRONMENT_ZONE/h2o.conf $APP_DIR/
+
+# dev
+deploy-server-dev:
+  <<: *deploy-server-init
+  tags: ["whiteverse-server-dev"]
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\#no-deploy/
+    - if: $CI_PIPELINE_SOURCE != "push"
+      when: never
+    - if: $CI_COMMIT_REF_SLUG == "develop"
+      when: always
+    - when: never
+  variables:  
+    GIT_DEPTH: 1
+    AWS_ECR_HOST: $AWS_ECR_HOST
+    ENVIRONMENT_ZONE: dev
+    APP_DIR: /home/ubuntu/colorverse-apis
+    DOCKER_TARGETS: $DOCKER_DEFAULT_TARGETS
+  script:
+    - cd $APP_DIR
+    - docker-compose stop $DOCKER_TARGETS
+    - docker-compose pull $DOCKER_TARGETS
+    - docker-compose up --build -d $DOCKER_TARGETS
+
+# ir
+deploy-server-ir:
+  <<: *deploy-server-init
+  tags: ["whiteverse-server-ir"]
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\#no-deploy/
+    - if: $CI_PIPELINE_SOURCE != "push"
+      when: never
+    - if: $CI_COMMIT_REF_SLUG == "ir"
+      when: always
+    - when: never
+  variables:  
+    GIT_DEPTH: 1
+    AWS_ECR_HOST: $AWS_ECR_HOST
+    ENVIRONMENT_ZONE: ir
+    APP_DIR: /home/ubuntu/colorverse-apis
+    DOCKER_TARGETS: $DOCKER_DEFAULT_TARGETS
+  script:
+    - cd $APP_DIR
+    - docker-compose stop $DOCKER_TARGETS
+    - docker-compose pull $DOCKER_TARGETS
+    - docker-compose up --build -d $DOCKER_TARGETS
+
+# pr
+deploy-server-pr:
+  <<: *deploy-server-init
+  tags: ["whiteverse-server-pr"]
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\#no-deploy/
+    - if: $CI_PIPELINE_SOURCE != "push"
+      when: never
+    - if: $CI_COMMIT_REF_SLUG == "pr"
+      when: always
+    - when: never
+  variables:  
+    GIT_DEPTH: 1
+    AWS_ECR_HOST: $AWS_ECR_HOST
+    APP_DIR: /home/ubuntu/colorverse-apis
+    DOCKER_TARGETS: $DOCKER_DEFAULT_TARGETS
+  script:
+    - cd $APP_DIR
+    - docker-compose stop $DOCKER_TARGETS
+    - docker-compose pull $DOCKER_TARGETS
+    - docker-compose up --build -d $DOCKER_TARGETS
+
+########################################
+# Deploy docs
+########################################
+deploy-docs-openapi:
+  stage: deploy-docs
+  image: 
+    name: amazon/aws-cli
+    entrypoint: [""]
+  needs: ["build-dotnet"]
+  tags: ["xrunner-public"]
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\#no-deploy/
+    - if: $CI_PIPELINE_SOURCE != "push"
+      when: never
+    - if: $CI_COMMIT_REF_SLUG == "develop"
+      variables:
+        ENVIRONMENT_ZONE: dev
+    - if: $CI_COMMIT_REF_SLUG == "ir"
+    - if: $CI_COMMIT_REF_SLUG == "pr"
+      when: always
+    - when: never
+  variables:    
+    AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+    AWS_S3_PATH: $DOCS_AWS_S3_PATH/$ENVIRONMENT_ZONE/apis
+    API_VERSION: v1
+  environment: ${ENVIRONMENT_ZONE}-deploy-docs
+  before_script:
+    - aws --version
+  script:
+    - aws s3 cp ./openapi ${AWS_S3_PATH}/docs/openapi/$API_VERSION/ --recursive --cache-control "public, max-age=2"
+
+########################################
+# Workflow
+########################################
+workflow:
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /-draft$/
+    - if: $CI_COMMIT_MESSAGE =~ /\#ci-skip/
+      when: never
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_MERGE_REQUEST_ID
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
+    - if: $CI_COMMIT_MESSAGE =~ /\#ci-test/
+      when: always
+    - when: never

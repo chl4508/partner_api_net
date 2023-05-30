@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  mongodb:
+    image: mongo
+    container_name: mongodb
+    hostname: mongodb
+    volumes:
+      - ./docker-data/mongodb/data/db:/data/db 
+    ports:
+      - "27017:27017"
+    #environment: 
+    #  MONGO_INITDB_ROOT_USERNAME: root
+    #  MONGO_INITDB_ROOT_PASSWORD: password
+  
+  # redis    
+  redis:
+    image: redis
+    container_name: redis
+    hostname: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./docker-data/redis/data:/data
+    #command: redis-server --port 6379
+
+  # nats
+  nats:
+    image: nats
+    container_name: nats
+    hostname: nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    # command: "--cluster_name NATS --cluster nats://0.0.0.0:6222 --http_port 8222 -js"
+    command: "--http_port 8222 -js"
+
+  # nats-slave:
+  #   image: nats
+  #   container_name: nats-slave
+  #   hostname: nats-slave
+  #   command: "--cluster_name NATS --cluster nats://0.0.0.0:6222 --routes=nats://ruser:T0pS3cr3t@nats:6222"
+  #   depends_on: ["nats"]
+  #   links:
+  #   - nats
+
+  h2o:
+    image: lkwg82/h2o-http2-server
+    container_name: h2o
+    ports:
+       - "8080:8080"
+       - "8081:8081"
+    working_dir: /etc/h2o
+    user: root
+    volumes:
+      - ./h2o.conf:/etc/h2o/h2o.conf
+      - ./docker-data/h2o/logs/:/var/log/h2o

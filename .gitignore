@@ -1,0 +1,23 @@
+# OS cache files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+
+# IDE
+## Visual Studio
+.vs/
+
+# FAKE file
+.fake
+
+# docker
+docker-data
+
+# swagger
+openapi
+*.user
+/dotnet/Service/Meta/MetaAdminApis/appsettings.Debug.json
+/dotnet/Service/Meta/MetaAdminApis/appsettings.dev.json
+/dotnet/Service/Meta/MetaAdminApis/appsettings.ir.json
